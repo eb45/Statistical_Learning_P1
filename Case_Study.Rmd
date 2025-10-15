@@ -1,6 +1,6 @@
 ---
 title: "Case Study: Boston Housing Dataset"
-author: "Emma Bennett"
+author: "Emma Bennett, Pallavi, Lily"
 date: 'UC3M, 2025'
 output:
   html_document: 
@@ -22,10 +22,33 @@ editor_options:
 ---
 ```{r}
 library(mlbench)
+library(tidyverse)
 ```
 
-## Why we chose this dataset
-This dataset that we chose is good for a lot of these dimensionality reduction techniques (like factor analysis and PCA) because it has a good number of quantitative variables and its well-structured and easy to visualize.
+## Information about dataset
+Found this dataset here: https://search.r-project.org/CRAN/refmans/mlbench/html/BostonHousing.html
+
+According to the description it consists of housing data for 506 census tracts of Boston from the 1970 census. 
+
+This dataset that we chose is good for a lot of these dimensionality reduction techniques (like factor analysis and PCA) because it has a good number of quantitative variables and is well-structured and easy to visualize.
+
+The following are the columns of the dataset:
+
+- **CRIM** — per capita crime rate by town  
+- **ZN** — proportion of residential land zoned for lots over 25,000 sq.ft.  
+- **INDUS** — proportion of non-retail business acres per town  
+- **CHAS** — Charles River dummy variable (1 if tract bounds river; 0 otherwise)  
+- **NOX** — nitric oxides concentration (parts per 10 million)  
+- **RM** — average number of rooms per dwelling  
+- **AGE** — proportion of owner-occupied units built prior to 1940  
+- **DIS** — weighted distances to five Boston employment centres  
+- **RAD** — index of accessibility to radial highways  
+- **TAX** — full-value property-tax rate per \$10,000  
+- **PTRATIO** — pupil-teacher ratio by town  
+- **B** — 1000(Bk − 0.63)² where Bk is the proportion of blacks by town  
+- **LSTAT** — % lower status of the population  
+- **MEDV** — median value of owner-occupied homes in \$1000’s
+
 
 
 ## Loading data
@@ -35,14 +58,26 @@ data("BostonHousing", package = "mlbench")
 summary(BostonHousing)
 ```
 
-## Data preprocessing
+```{r}
+glimpse(BostonHousing)
+```
 
+## Data preprocessing
+Below we are going to do some preprocessing on the data including dealing with outliers, checking if there are any NA values, and other feature engineering.
 
 ### Outliers
 
-### NA
+### NA/Missing Values
+In this dataset there are no missing values.
+```{r}
+barplot(colMeans(is.na(BostonHousing)), las=2)
+```
+
+To show how we would deal with missing values going to remove NA values on a different dataset.
+
 
 ### Feature Engineering
+
 
 ## Visualization Insights
 
