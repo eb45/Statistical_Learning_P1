@@ -1,0 +1,56 @@
+---
+title: "Case Study: Boston Housing Dataset"
+author: "Emma Bennett"
+date: 'UC3M, 2025'
+output:
+  html_document: 
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: no
+    toc: no
+    toc_depth: 1
+  pdf_document:
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: yes
+    toc: yes
+    toc_depth: 1
+editor_options:
+  chunk_output_type: console
+---
+```{r}
+library(mlbench)
+```
+
+## Why we chose this dataset
+This dataset that we chose is good for a lot of these dimensionality reduction techniques (like factor analysis and PCA) because it has a good number of quantitative variables and its well-structured and easy to visualize.
+
+
+## Loading data
+
+```{r}
+data("BostonHousing", package = "mlbench")
+summary(BostonHousing)
+```
+
+## Data preprocessing
+
+
+### Outliers
+
+### NA
+
+### Feature Engineering
+
+## Visualization Insights
+
+## Regression models and resampling tools
+
+## PCA
+
+## Factor Analysis
+
+## Clustering tools
+
