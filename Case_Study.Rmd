@@ -77,6 +77,48 @@ Below we are going to do some preprocessing on the data including dealing with o
 
 ### Outliers
 
+Here, we are identifying outliers (extreme values) in the Boston Housing dataset.
+
+```{r}
+# Example: Corrected median value of owner-occupied homes (cmedv)
+BostonHousing2 %>%
+  ggplot(aes(y = cmedv)) + 
+  geom_boxplot(fill = "lightblue", color = "blue", 
+               outlier.color = "red", outlier.shape = 16) + 
+  theme_minimal() +
+  labs(title = "Boxplot of Median Home Value (cmedv)",
+       y = "Median Value ($1000s)")
+
+# Identification by the 3-sigma rule
+mu <- mean(BostonHousing2$cmedv, na.rm = TRUE)
+sigma <- sd(BostonHousing2$cmedv, na.rm = TRUE)
+
+sum(BostonHousing2$cmedv < mu - 3*sigma | BostonHousing2$cmedv > mu + 3*sigma)
+
+# Identification by the IQR method
+QI <- quantile(BostonHousing2$cmedv, 0.25, na.rm = TRUE)
+QS <- quantile(BostonHousing2$cmedv, 0.75, na.rm = TRUE)
+IQR <- QS - QI
+
+sum(BostonHousing2$cmedv < QI - 1.5*IQR | BostonHousing2$cmedv > QS + 1.5*IQR)
+
+# Depending on the context, we must decide what to do:
+# - Remove them if they are errors or impossible values
+# - Keep them if they represent true extreme cases
+
+# Extend analysis to all numeric variables
+numeric_vars <- BostonHousing2 %>% select(where(is.numeric))
+
+numeric_vars %>%
+  pivot_longer(cols = everything(), names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = variable, y = value, fill = variable)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 16) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Boxplots of Numeric Variables in BostonHousing2",
+       x = "Variable",
+       y = "Value")
+```
 
 
 ### NA/Missing Values
@@ -96,6 +138,7 @@ To show how we would deal with missing values going to remove NA values on a dif
 ## Regression models and resampling tools
 
 ## PCA
+
 
 ```{r}
 pca=prcomp(BostonHousing[,-4], scale=T)
@@ -118,4 +161,9 @@ x.f <- factanal(new_data,factors = 3, rotation="none", scores = "regression")
 ## Factor Analysis
 
 ## Clustering tools
+
+```{r}
+#hclust(X, )
+```
+
 
