@@ -27,6 +27,10 @@ library(tidyverse)
 library(tibble)
 library(knitr)
 library(ggcorrplot)
+library(mapview)
+library(sf)
+library(GGally)
+library(factoextra)
 ```
 
 ## Information about dataset
@@ -70,6 +74,54 @@ glimpse(BostonHousing2)
 ```{r}
 boxplot(BostonHousing2)
 ```
+
+### Overlaying Map to Boston Housing
+```{python}
+
+# import numpy as np
+# import pandas as pd
+# 
+# # Assuming df = BostonHousing2 loaded as pandas DataFrame
+# # and town_names, lat_long = reference coordinates of town centers
+# 
+# lat_long_values = []
+# 
+# # Calculate the per-town mean lat/lon
+# wrong_values = df.groupby('TOWN')[['LAT', 'LON']].mean()
+# 
+# # Iterate through each town and its reference point
+# for name, (lat, lon) in zip(town_names, lat_long):
+#     df_temp = df[df.TOWN == name]
+#     mean_temp = wrong_values.loc[name].values  # [mean_lat, mean_lon]
+#     
+#     for lat_local, lon_local in df_temp[['LAT', 'LON']].values:
+#         # difference from mean position
+#         diff_lat = lat_local - mean_temp[0]
+#         diff_lon = lon_local - mean_temp[1]
+#         
+#         # translated position relative to reference point
+#         lat_long_values.append([lat + diff_lat, lon + diff_lon])
+# 
+# # Replace in dataframe
+# df = df.sort_values('TOWN').copy()
+# df[['LAT', 'LON']] = np.asarray(lat_long_values)
+# 
+# # Rename to lowercase for mapview compatibility
+# df.rename(columns={'LAT': 'lat', 'LON': 'lon'}, inplace=True)
+# 
+# # Export to R if needed:
+# df.to_csv("BostonHousing2_corrected.csv", index=False)
+
+```
+
+
+```{r}
+library(mapview)
+#BostonHousing2 <- read.csv("BostonHousing2_corrected.csv")
+
+#mapview(BostonHousing2, xcol = "lon", ycol = "lat", grid = TRUE, crs = 4326)
+```
+
 
 
 ## Data preprocessing
@@ -141,24 +193,75 @@ To show how we would deal with missing values going to remove NA values on a dif
 
 
 ```{r}
-pca=prcomp(BostonHousing[,-4], scale=T)
-new_data=scale(BostonHousing[,-4])
+pca=prcomp(BostonHousing2[,-c(1, 2, 3, 4, 5, 10)], scale=T)
+new_data=scale(BostonHousing2[,-c(1, 2, 3, 4, 5, 10)])
 boxplot(new_data)
 ```
+
+```{r}
+pca = prcomp(new_data, scale=TRUE)
+su = summary(pca)
+
+# calculate mean of variances explained by everything
+mean(su$importance[2, ])
+
+# Keep all of the columns that have more than 7% (or whatever that mean val is above) of variance
+
+barplot(pca$rotation[,1])
+
+```
+
 
 ```{r}
 ggcorrplot(cor(new_data),lab=T, type="lower")
 plot(BostonHousing2$lon,BostonHousing2$lat)
 ```
 
+
 ```{r}
-#x.f=factanal(new_data)
-x.f <- factanal(new_data,factors = 3, rotation="none", scores = "regression")
-#x.f <- factanal(new_data,factors = 3, rotation="varimax", scores = "regression")
+# Function to determine 
+fviz_contrib(pca, choice="var", axes=1)
+barplot(pca$rotation[,1])
+
+fviz_contrib(pca, choice="var", axes=2)
+barplot(pca$rotation[,2])
+# Could interpret this for example as the fact that if distance from city center is low then the median house value is higher
+
+fviz_contrib(pca, choice="var", axes=3)
+barplot(pca$rotation[,3])
+# Could interpret relationship between highway distance and taxes being inversely proportional for example
+
 ```
 
 
 ## Factor Analysis
+
+```{r}
+x.f <- factanal(new_data,factors = 3, rotation="none", scores = "regression")
+x.f
+```
+
+We obtain that factor is same proportion as principal component anlalysis. For PC3 its around 72% and factor analysis is around 66%. 
+
+Can compare positive and negatives between the factor analysis loadings and the PCA loadings.
+
+Interpretation is EXACTLY THE SAME between factor analysis and PCA for factor1.
+For factor 2 negatives and positives are swapped for some of them, but all of the relationships are the same so also same as the PCA for dim 2.
+
+```{r}
+# Exactly the same as above but now just considering two factors
+x.f <- factanal(new_data,factors = 2, rotation="none", scores = "regression")
+x.f
+```
+
+Factor1 explains same as PCA1. However, if you look at the second factor now it's not the same as PCA2 (because the negatives/positives are messed up).
+
+```{r}
+# Could also try different type of rotation (e.g. varimax)
+x.f <- factanal(new_data,factors = 3, rotation="varimax", scores = "regression")
+x.f
+```
+
 
 ## Clustering tools
 
