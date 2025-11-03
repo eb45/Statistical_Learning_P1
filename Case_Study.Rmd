@@ -184,10 +184,101 @@ To show how we would deal with missing values going to remove NA values on a dif
 
 ### Feature Engineering
 
-
 ## Visualization Insights
 
 ## Regression models and resampling tools
+
+Come up with a variable that you want to predict - we want to predict cmev
+
+MSE decomposition:
+
+```{r}
+set.seed(123)
+
+n_sims = 1000        # number of simulation runs
+n_models = 4         # number of models
+n = nrow(BostonHousing2)
+n_train = round(0.8 * n)
+
+# Create a matrix to store predictions
+predictions = matrix(0, nrow = n_sims, ncol = n_models)
+
+# Choose a fixed x0 point to predict (optional)
+x0 = data.frame(rm = 6, ptratio = 15, lstat = 10)
+
+# Simulation loop
+for (i in 1:n_sims) {
+  # Split data into train/test
+  ind.train = sample(1:n, n_train, replace = FALSE)
+  train = BostonHousing2[ind.train, ]
+  test  = BostonHousing2[-ind.train, ]
+  
+  # Fit four models
+  fit_1 = lm(cmedv ~ rm, data = train)
+  fit_2 = lm(cmedv ~ ptratio, data = train)
+  fit_3 = lm(cmedv ~ lstat, data = train)
+  fit_4 = lm(cmedv ~ rm + ptratio + lstat, data = train)
+  
+  pred1 = predict(fit_1, newdata = test)
+  pred2 = predict(fit_2, newdata = test)
+  pred3 = predict(fit_3, newdata = test)
+  pred4 = predict(fit_4, newdata = test)
+  
+  mse1 = mean((pred1 - test$cmedv)^2)
+  mse2 = mean((pred2 - test$cmedv)^2)
+  mse3 = mean((pred3 - test$cmedv)^2)
+  mse4 = mean((pred4 - test$cmedv)^2)
+  
+  predictions[i, ] = c(mse1, mse2, mse3, mse4)
+
+}
+
+# Check the first few rows of predictions
+colMeans(predictions)
+
+
+```
+
+
+### Cross validation (leave one out):
+
+The code for both of these is in the Resampling Bias (session 3) directed study.
+```{r}
+n = nrow(BostonHousing2)
+MSE_test = matrix(0, nrow = n, ncol = 4)
+
+for (i in 1:n) {
+  train_set = BostonHousing2[-i, ]
+  test_set  = BostonHousing2[i, , drop = FALSE]
+  
+  fit_1 = lm(cmedv ~ 1, data = train_set)  # intercept only
+  fit_2 = lm(cmedv ~ poly(rm, degree = 1), data = train_set)
+  fit_3 = lm(cmedv ~ poly(rm, degree = 2), data = train_set)
+  fit_4 = lm(cmedv ~ poly(rm, degree = 10), data = train_set)
+  
+  pred1 = predict(fit_1, newdata = test_set)
+  pred2 = predict(fit_2, newdata = test_set)
+  pred3 = predict(fit_3, newdata = test_set)
+  pred4 = predict(fit_4, newdata = test_set)
+  
+  MSE_test[i, 1] = (pred1 - test_set$cmedv)^2
+  MSE_test[i, 2] = (pred2 - test_set$cmedv)^2
+  MSE_test[i, 3] = (pred3 - test_set$cmedv)^2
+  MSE_test[i, 4] = (pred4 - test_set$cmedv)^2
+}
+
+colnames(MSE_test) = c("Intercept only", "poly(rm,1)", "poly(rm,2)", "poly(rm,10)")
+apply(MSE_test, 2, mean)
+
+```
+
+
+
+### K-means cross validation:
+
+
+
+
 
 ## PCA
 
@@ -264,6 +355,27 @@ x.f
 
 
 ## Clustering tools
+
+Apply k-means for different values of k
+```{r}
+k = 5
+fit = kmeans(scale(x), k, nstart = 1000)
+groups = fitcluster
+
+
+fviz_cluster(....)
+
+apply different function
+```
+
+
+K-mediums
+
+Hierarchical clustering
+
+Choose two different ones and compare
+
+
 
 ```{r}
 #hclust(X, )
