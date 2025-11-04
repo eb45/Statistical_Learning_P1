@@ -551,32 +551,64 @@ barplot(sort(abs(pca$rotation[,3]), decreasing = TRUE),
 ```
 
 ## Factor Analysis
+Here, we are doing factor analysis with a couple  different models:
 
+#### 3-factor model (no rotation)
 ```{r}
-x.f <- factanal(new_data,factors = 3, rotation="none", scores = "regression")
+x.f <- factanal(new_data, factors = 3, rotation = "none", scores = "regression")
 x.f
+
+# Compare PCA vs FA loadings visually (Factor 1)
+fa_loadings <- as.data.frame(x.f$loadings[, 1:3])
+pca_loadings <- as.data.frame(pca$rotation[, 1:3])
+
+plot(pca_loadings[,1], fa_loadings[,1],
+     xlab = "PCA Loadings (PC1)", ylab = "Factor Loadings (F1)",
+     main = "PCA vs. Factor Analysis Loadings (Factor 1)",
+     pch = 19, col = "steelblue")
+abline(a = 0, b = 1, col = "red", lty = 2)
+text(pca_loadings[,1], fa_loadings[,1],
+     labels = rownames(pca_loadings), pos = 3, cex = 0.7)
+
 ```
 
-We obtain that factor is same proportion as principal component anlalysis. For PC3 its around 72% and factor analysis is around 66%. 
-
-Can compare positive and negatives between the factor analysis loadings and the PCA loadings.
-
-Interpretation is EXACTLY THE SAME between factor analysis and PCA for factor1.
-For factor 2 negatives and positives are swapped for some of them, but all of the relationships are the same so also same as the PCA for dim 2.
-
+#### 2-factor model (no rotation)
 ```{r}
-# Exactly the same as above but now just considering two factors
-x.f <- factanal(new_data,factors = 2, rotation="none", scores = "regression")
-x.f
+x.f2 <- factanal(new_data, factors = 2, rotation = "none", scores = "regression")
+x.f2
+
+# Compare PCA vs FA loadings visually (Factor 2)
+plot(pca_loadings[,2], x.f2$loadings[,2],
+     xlab = "PCA Loadings (PC2)", ylab = "Factor Loadings (F2)",
+     main = "PCA vs. Factor Analysis Loadings (Factor 2)",
+     pch = 19, col = "darkgreen")
+abline(a = 0, b = 1, col = "red", lty = 2)
+text(pca_loadings[,2], x.f2$loadings[,2],
+     labels = rownames(pca_loadings), pos = 3, cex = 0.7)
+
 ```
 
-Factor1 explains same as PCA1. However, if you look at the second factor now it's not the same as PCA2 (because the negatives/positives are messed up).
 
+#### 3-factor model with varimax rotation
 ```{r}
-# Could also try different type of rotation (e.g. varimax)
-x.f <- factanal(new_data,factors = 3, rotation="varimax", scores = "regression")
-x.f
+x.f_varimax <- factanal(new_data, factors = 3, rotation = "varimax", scores = "regression")
+x.f_varimax
+
+# Visualize rotated factor loadings
+barplot(x.f_varimax$loadings[,1],
+        main = "Varimax Rotated Factor 1 Loadings",
+        col = "steelblue", las = 2)
+barplot(x.f_varimax$loadings[,2],
+        main = "Varimax Rotated Factor 2 Loadings",
+        col = "darkgreen", las = 2)
+barplot(x.f_varimax$loadings[,3],
+        main = "Varimax Rotated Factor 3 Loadings",
+        col = "purple", las = 2)
 ```
+
+The factor analysis explains a similar proportion of variance as the principal component analysis (PCA). For example, the first three principal components account for about 72% of the variance, while the three extracted factors explain roughly 66%.
+
+When comparing the factor loadings to the PCA loadings, the overall patterns are very consistent. The interpretation of Factor 1 is identical to PC1, showing the same variable relationships. For Factor 2, some loadings have opposite signs, but since the direction (positive vs. negative) in PCA and FA is arbitrary, the underlying relationships remain the same — meaning the interpretation aligns closely with PCA Dimension 2.
 
 
 ## Clustering tools
@@ -667,8 +699,6 @@ fviz_cluster(fit.pam, geom = "point", ellipse.type = "norm",
              main = "Clusters with PAM (K-medoids)",
              star.plot = TRUE, repel = TRUE) +
   theme_minimal()
-
-
 ```
 
 
