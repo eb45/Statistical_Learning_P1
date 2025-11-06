@@ -1,0 +1,723 @@
+---
+title: "Case Study: Boston Housing Dataset"
+author: "Emma Bennett, Pallavi Bhargava, Lily Berner"
+date: 'UC3M, 2025'
+output:
+  html_document: 
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: no
+    toc: no
+    toc_depth: 1
+  pdf_document:
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: yes
+    toc: yes
+    toc_depth: 1
+editor_options:
+  chunk_output_type: console
+---
+
+The Boston Housing Dataset contains 506 census tracts from the 1970 Boston census with 19 variables including housing characteristics, environmental factors, and geographic coordinates. Our objective is to predict corrected median home values (cmedv) using dimensionality reduction (PCA, Factor Analysis) and regression with resampling methods. The spatial distribution shows dense clustering in Boston's urban core with visible coastline, confirming geographic accuracy.
+```{r}
+# Importing libraries
+library(mlbench)
+library(tidyverse)
+library(tibble)
+library(knitr)
+library(ggcorrplot)
+library(mapview)
+library(sf)
+library(GGally)
+library(factoextra)
+```
+
+## Information about dataset
+
+The Boston Housing Dataset is good for dimensionality reduction techniques like factor analysis and PCA because it has a good number of quantitative variables and is well-structured and easy to visualize. It also has many practical applications, and we liked that it was a strong dataset to gather real-world interpretations from.
+
+The following are the columns of the dataset:
+
+- **CRIM** — per capita crime rate by town  
+- **ZN** — proportion of residential land zoned for lots over 25,000 sq.ft.  
+- **INDUS** — proportion of non-retail business acres per town  
+- **CHAS** — Charles River dummy variable (1 if tract bounds river; 0 otherwise)  
+- **NOX** — nitric oxides concentration (parts per 10 million)  
+- **RM** — average number of rooms per dwelling  
+- **AGE** — proportion of owner-occupied units built prior to 1940  
+- **DIS** — weighted distances to five Boston employment centres  
+- **RAD** — index of accessibility to radial highways  
+- **TAX** — full-value property-tax rate per \$10,000  
+- **PTRATIO** — pupil-teacher ratio by town  
+- **B** — 1000(Bk − 0.63)² where Bk is the proportion of blacks by town  
+- **LSTAT** — % lower status of the population  
+- **MEDV** — median value of owner-occupied homes in \$1000’s  
+- **TOWN** — name of the town  
+- **TRACT** — census tract number within the town  
+- **LON** — longitude coordinate of the census tract centroid  
+- **LAT** — latitude coordinate of the census tract centroid  
+- **CMEDV** — corrected median value of owner-occupied homes (in \$1000’s, accounting for inflation and updates)
+
+## Loading data
+Here we are using a dataset that was corrected using Google's Geocoder as the original latitude/longitude was not accurate and some of the houses were mapped to being in the ocean.
+
+However, this new corrected set means that there are some latitude/longitude outliers.
+
+```{r}
+# Loading fixed dataset
+BostonHousing2 <- read.csv("boston_fixed.csv")
+
+# Making all column names lower case
+names(BostonHousing2) <- tolower(names(BostonHousing2))
+
+BostonHousing2$lat <- as.numeric(BostonHousing2$lat)
+BostonHousing2$lon <- as.numeric(BostonHousing2$lon)
+
+summary(BostonHousing2[, c("lat", "lon")])
+```
+
+```{r}
+# Boxplots of numeric columns
+numeric_cols <- sapply(BostonHousing2, is.numeric)
+boxplot(BostonHousing2[, numeric_cols],
+        main = "Boxplots of Numeric Variables (Boston Fixed)",
+        col = "lightblue", las = 2)
+```
+
+```{r}
+# Map visualization
+mapview(
+  BostonHousing2,
+  xcol = "lon",
+  ycol = "lat",
+  crs = 4326,
+  grid = TRUE,
+  layer.name = "Boston Housing (Fixed)"
+)
+```
+
+
+## Data preprocessing
+Below we are going to do some preprocessing on the data including dealing with outliers, checking if there are any NA values, and other feature engineering.
+
+### Outliers
+
+Here, we are identifying outliers (extreme values) in the Boston Housing dataset. Examples of this can be found above in the way that some of the latitude/longitude values are severely off.
+
+#### Outliers: Removing outlier latitude/longitude data values
+```{r}
+# We know what the expected coordinate range of living in Boston is
+lat_min <- 42.0; lat_max <- 43.0
+lon_min <- -71.5; lon_max <- -70.5
+
+# --- Flag outliers ---
+BostonHousing2$outlier <- with(BostonHousing2,
+  lat < lat_min | lat > lat_max | lon < lon_min | lon > lon_max
+)
+
+cat("⚠️  Detected", sum(BostonHousing2$outlier), "coordinate outliers\n")
+
+# --- Remove outliers ---
+BostonHousing2_clean <- subset(BostonHousing2, outlier == FALSE)
+cat("✅ Remaining rows after cleanup:", nrow(BostonHousing2_clean), "\n")
+```
+
+```{r}
+# Re-visualize cleaned up map
+
+# More boxplots (post-cleaning)
+numeric_cols_clean <- sapply(BostonHousing2_clean, is.numeric)
+boxplot(BostonHousing2_clean[, numeric_cols_clean],
+        main = "Boxplots (Cleaned BostonHousing2)",
+        col = "lightgreen", las = 2)
+
+# --- Updated map ---
+mapview(
+  BostonHousing2_clean,
+  xcol = "lon",
+  ycol = "lat",
+  crs = 4326,
+  grid = TRUE,
+  layer.name = "Boston Housing – Cleaned"
+)
+
+```
+
+
+#### Outliers: Checking if any outliers in cmedv (median value of owner-occupied homes)
+
+```{r}
+# Load libraries
+library(MASS)      # For BostonHousing2 dataset
+library(ggplot2)
+library(tidyr)     # For pivot_longer()
+
+# -----------------------------
+# 1. Boxplot for cmedv
+# -----------------------------
+ggplot(BostonHousing2, aes(y = cmedv)) +
+  geom_boxplot(fill = "lightblue", color = "blue",
+               outlier.color = "red", outlier.shape = 16) +
+  theme_minimal() +
+  labs(title = "Boxplot of Median Home Value (cmedv)",
+       y = "Median Value ($1000s)")
+
+# -----------------------------
+# 2. Outlier detection - 3 sigma rule
+# -----------------------------
+mu <- mean(BostonHousing2$cmedv, na.rm = TRUE)
+sigma <- sd(BostonHousing2$cmedv, na.rm = TRUE)
+
+n_outliers_sigma <- sum(BostonHousing2$cmedv < mu - 3*sigma |
+                        BostonHousing2$cmedv > mu + 3*sigma, na.rm = TRUE)
+cat("Outliers detected by 3-sigma rule:", n_outliers_sigma, "\n")
+
+# -----------------------------
+# 3. Outlier detection - IQR method
+# -----------------------------
+QI <- quantile(BostonHousing2$cmedv, 0.25, na.rm = TRUE)
+QS <- quantile(BostonHousing2$cmedv, 0.75, na.rm = TRUE)
+IQR_val <- QS - QI
+
+n_outliers_iqr <- sum(BostonHousing2$cmedv < QI - 1.5*IQR_val |
+                      BostonHousing2$cmedv > QS + 1.5*IQR_val, na.rm = TRUE)
+cat("Outliers detected by IQR method:", n_outliers_iqr, "\n")
+
+# -----------------------------
+# 4. Boxplots for all numeric variables
+# -----------------------------
+# Select numeric columns manually using base R
+numeric_vars <- BostonHousing2[, sapply(BostonHousing2, is.numeric)]
+
+# Pivot and plot
+numeric_vars %>%
+  pivot_longer(cols = everything(), names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = variable, y = value, fill = variable)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 16) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Boxplots of Numeric Variables in BostonHousing2",
+       x = "Variable",
+       y = "Value")
+
+```
+
+Even though there are 39 missing values when we use IQR method, looking at those specific outliers leads us to believe it is not a product of bad/corrupt data. It is just that these houses are further from city centers and in more distant neighborhoods which is why their prices are drastically different.
+
+
+### NA/Missing Values
+```{r}
+barplot(colMeans(is.na(BostonHousing2)), las=2)
+```
+
+The barplot indicates that there are no missing values across any variables since all columns have a missing-value proportion of zero. This indicates that there is no need to remove or impute any records in this regard.
+
+### Feature Engineering
+Some possibilities for feature engineering that we can do on this dataset include:
+
+#### Combining features to capture more meaningful relationships\n
+Here we combine features like rooms per dwelling and distance from Boston employment center to have a measure like how much residential space is available per distance from the city center.
+
+Another feature I have is taxes/room which measures how much tax burden is there per unit of living space.\n
+```{r}
+BostonHousing2$rooms_per_household <- BostonHousing2$rm / BostonHousing2$dis
+BostonHousing2$tax_per_room <- BostonHousing2$tax / BostonHousing2$rm
+```
+
+
+
+#### Scaling and normalization of numeric variables
+```{r}
+# Center and scale all numeric columns
+numeric_cols <- sapply(BostonHousing2, is.numeric)
+BostonHousing2_scaled <- BostonHousing2
+BostonHousing2_scaled[, numeric_cols] <- scale(BostonHousing2[, numeric_cols])
+```
+
+#### Plots to visualize new engineered features
+```{r}
+# Summary statistics for the new engineered features
+summary(BostonHousing2[, c("rooms_per_household", "tax_per_room")])
+
+# Correlation of new features with median home value (medv)
+cor(BostonHousing2[, c("rooms_per_household", "tax_per_room", "medv")], use = "complete.obs")
+
+# Quick scatterplots to visualize relationships
+library(ggplot2)
+```
+
+
+```{r}
+# Rooms per household vs. MEDV
+ggplot(BostonHousing2, aes(x = rooms_per_household, y = medv)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "darkred") +
+  labs(title = "Rooms per Household vs Median Home Value",
+       x = "Rooms per Household (rm/dis)",
+       y = "Median Home Value (MEDV)") +
+  theme_minimal()
+```
+
+```{r}
+# Tax per room vs. MEDV
+ggplot(BostonHousing2, aes(x = tax_per_room, y = medv)) +
+  geom_point(alpha = 0.6, color = "seagreen") +
+  geom_smooth(method = "lm", se = FALSE, color = "darkred") +
+  labs(title = "Tax per Room vs Median Home Value",
+       x = "Tax per Room (tax/rm)",
+       y = "Median Home Value (MEDV)") +
+  theme_minimal()
+```
+
+
+## Regression models and resampling tools
+
+The code below compares the predictive performance of multiple regression models on the BostonHousing2 dataset. The code repeats (1000 simulations) and splits the data randomly into training and test sets.
+
+The following linear regression models are fit on each training set:
+
+1. `cmedv ~ rm` — median value vs. average number of rooms
+
+2. `cmedv ~ ptratio` — median value vs. pupil–teacher ratio
+
+3. `cmedv ~ lstat` — median value vs. % lower-status population
+
+4. `cmedv ~ rm + ptratio + lstat` — multivariable model
+
+5. `cmedv ~ all other variables` — multivariable model
+
+### MSE decomposition:
+
+Four models were compared using 1,000 simulations with 80-20 train-test splits: (1) RM only, (2) PTRATIO only, (3) LSTAT only, (4) RM + PTRATIO + LSTAT. Model 4 achieved lowest MSE, demonstrating that combining physical characteristics (RM), educational quality (PTRATIO), and socioeconomic status (LSTAT) captures complementary predictive dimensions.
+```{r}
+library(MASS)
+set.seed(123)
+
+# -----------------------------
+# 1. Data prep
+# -----------------------------
+# Drop identifiers, factors, and non-predictive columns
+x <- BostonHousing2[, !(names(BostonHousing2) %in%
+  c("townno", "tract", "medv", "chas", "rad", "outlier", "town"))]
+
+n <- nrow(x)
+
+# Initialize MSE totals
+MSE.total <- numeric(5)
+names(MSE.total) <- paste0("Model_", 1:5)
+
+# -----------------------------
+# 2. Simulation loop
+# -----------------------------
+for (i in 1:1000) {
+  ind.train <- sample(1:n, round(0.8 * n), replace = FALSE)
+  train <- x[ind.train, ]
+  test  <- x[-ind.train, ]
+  
+  fit_1 <- lm(cmedv ~ rm, data = train)
+  fit_2 <- lm(cmedv ~ ptratio, data = train)
+  fit_3 <- lm(cmedv ~ lstat, data = train)
+  fit_4 <- lm(cmedv ~ rm + ptratio + lstat + tax + indus, data = train)
+  fit_5 <- lm(cmedv ~ ., data = train)
+  
+  pred1 <- predict(fit_1, newdata = test)
+  pred2 <- predict(fit_2, newdata = test)
+  pred3 <- predict(fit_3, newdata = test)
+  pred4 <- predict(fit_4, newdata = test)
+  pred5 <- predict(fit_5, newdata = test)
+  
+  MSE.total[1] <- MSE.total[1] + mean((pred1 - test$cmedv)^2)
+  MSE.total[2] <- MSE.total[2] + mean((pred2 - test$cmedv)^2)
+  MSE.total[3] <- MSE.total[3] + mean((pred3 - test$cmedv)^2)
+  MSE.total[4] <- MSE.total[4] + mean((pred4 - test$cmedv)^2)
+  MSE.total[5] <- MSE.total[5] + mean((pred5 - test$cmedv)^2)
+}
+
+# -----------------------------
+# 3. Average MSEs
+# -----------------------------
+MSE.avg <- MSE.total / 1000
+print(round(MSE.avg, 3))
+
+barplot(MSE.avg,
+        names.arg = c("rm", "ptratio", "lstat",
+                      "rm+ptratio+lstat+tax+indus", "all variables"),
+        col = "steelblue",
+        main = "Average Test MSE Across Models (1000 Simulations)",
+        ylab = "Mean Squared Error",
+        las = 2)
+
+
+```
+
+
+### Cross validation (leave one out):
+
+The code for both of these is in the Resampling Bias (session 3) directed study.
+Leave-one-out cross validation compared polynomial degrees using RM: intercept-only, linear (degree 1), quadratic (degree 2), and high-degree (degree 10). The quadratic model achieved optimal MSE, balancing flexibility and generalization. The degree-10 polynomial showed overfitting with higher CV error despite perfect training fit, illustrating the bias-variance tradeoff.
+```{r}
+library(MASS)
+set.seed(123)
+
+# Prepping data
+x <- BostonHousing2[, !(names(BostonHousing2) %in%
+  c("townno", "tract", "medv", "chas", "rad", "outlier", "town"))]
+
+n <- nrow(x)
+
+# Initialize MSE accumulators
+MSE.total <- numeric(5)
+names(MSE.total) <- paste0("Model_", 1:5)
+
+# Leave-One-Out Cross-Validation
+for (i in 1:n) {
+  # Train/test split
+  train <- x[-i, ]
+  test  <- x[i, , drop = FALSE]
+  
+  # Fit models on training data
+  fit_1 <- lm(cmedv ~ rm, data = train)
+  fit_2 <- lm(cmedv ~ ptratio, data = train)
+  fit_3 <- lm(cmedv ~ lstat, data = train)
+  fit_4 <- lm(cmedv ~ rm + ptratio + lstat + tax + indus, data = train)
+  fit_5 <- lm(cmedv ~ ., data = train)
+  
+  # Predict the left-out observation
+  pred1 <- predict(fit_1, newdata = test)
+  pred2 <- predict(fit_2, newdata = test)
+  pred3 <- predict(fit_3, newdata = test)
+  pred4 <- predict(fit_4, newdata = test)
+  pred5 <- predict(fit_5, newdata = test)
+  
+  # Add squared errors
+  MSE.total[1] <- MSE.total[1] + (pred1 - test$cmedv)^2
+  MSE.total[2] <- MSE.total[2] + (pred2 - test$cmedv)^2
+  MSE.total[3] <- MSE.total[3] + (pred3 - test$cmedv)^2
+  MSE.total[4] <- MSE.total[4] + (pred4 - test$cmedv)^2
+  MSE.total[5] <- MSE.total[5] + (pred5 - test$cmedv)^2
+}
+
+# Avg MSEs
+MSE.avg <- MSE.total / n
+print(round(MSE.avg, 3))
+
+# Visualizing
+barplot(MSE.avg,
+        names.arg = c("rm", "ptratio", "lstat",
+                      "rm+ptratio+lstat+tax+indus", "all variables"),
+        col = "steelblue",
+        main = "Leave-One-Out Cross-Validation (LOOCV) MSE",
+        ylab = "Mean Squared Error",
+        las = 2)
+
+
+```
+
+
+### K-fold cross validation:
+This code performs 10-fold cross-validation to compare the predictive performance  of five linear regression models predicting median home values (cmedv) in the Boston Housing dataset. The data is randomly partitioned into 10 folds, with each fold serving as a test set while the remaining data trains the models, and the average Mean Squared Error (MSE) across all folds is calculated for each model. The models range from simple single-predictor regressions (rm, ptratio, lstat)  to more complex models with multiple predictors, allowing us to evaluate which  combination of features best predicts housing values.
+```{r}
+library(MASS)
+set.seed(123)
+
+# Prepping data
+x <- BostonHousing2[, !(names(BostonHousing2) %in%
+  c("townno", "tract", "medv", "chas", "rad", "outlier", "town"))]
+
+n <- nrow(x)
+Kfolds <- 10
+fold_id <- sample(rep(1:Kfolds, length.out = n))  # random fold assignments
+
+MSE.total <- numeric(5)
+names(MSE.total) <- paste0("Model_", 1:5)
+
+# K-Fold Cross-Validation
+for (k in 1:Kfolds) {
+  # Split data
+  train <- x[fold_id != k, ]
+  test  <- x[fold_id == k, ]
+  
+  # Fit models
+  fit_1 <- lm(cmedv ~ rm, data = train)
+  fit_2 <- lm(cmedv ~ ptratio, data = train)
+  fit_3 <- lm(cmedv ~ lstat, data = train)
+  fit_4 <- lm(cmedv ~ rm + ptratio + lstat + tax + indus, data = train)
+  fit_5 <- lm(cmedv ~ ., data = train)
+  
+  # Predictions
+  pred1 <- predict(fit_1, newdata = test)
+  pred2 <- predict(fit_2, newdata = test)
+  pred3 <- predict(fit_3, newdata = test)
+  pred4 <- predict(fit_4, newdata = test)
+  pred5 <- predict(fit_5, newdata = test)
+  
+  # Compute MSEs
+  MSE.total[1] <- MSE.total[1] + mean((pred1 - test$cmedv)^2)
+  MSE.total[2] <- MSE.total[2] + mean((pred2 - test$cmedv)^2)
+  MSE.total[3] <- MSE.total[3] + mean((pred3 - test$cmedv)^2)
+  MSE.total[4] <- MSE.total[4] + mean((pred4 - test$cmedv)^2)
+  MSE.total[5] <- MSE.total[5] + mean((pred5 - test$cmedv)^2)
+}
+
+MSE.avg <- MSE.total / Kfolds
+print(round(MSE.avg, 3))
+
+# Visualization
+barplot(MSE.avg,
+        names.arg = c("rm", "ptratio", "lstat",
+                      "rm+ptratio+lstat+tax+indus", "all variables"),
+        col = "steelblue",
+        main = paste(Kfolds, "-Fold Cross-Validation MSE", sep = ""),
+        ylab = "Mean Squared Error",
+        las = 2)
+
+```
+
+
+## PCA
+We applied Principal Component Analysis (PCA) to 13 continuous variables from the Boston Housing dataset (excluding identifiers, factor variables, and response  variables like medv and cmedv). The data was standardized to ensure all features contribute equally, and we examined variance explained by each component and variable contributions to the first three principal components to interpret which housing  characteristics drive the primary axes of variation.
+#### Data prep and scaling
+The selected continuous variables are standardized (mean = 0, SD = 1) to ensure all features contribute equally to the PCA, preventing variables with larger 
+scales from dominating the analysis.
+```{r}
+# Remove identifiers and factor/response columns
+pca_data <- BostonHousing2[, -c(1, 2, 3, 4, 5, 10)]
+
+# Standardize the data
+new_data <- scale(pca_data)
+
+# Quick visualization of scaled variable distributions
+boxplot(new_data, main = "Boxplots of Standardized Variables in BostonHousing2")
+```
+
+#### PCA computation and variance summary
+PCA is computed on the standardized data, and we examine how much variance each principal component explains through summary statistics and a scree plot to determine how many components effectively capture the dataset's variability.
+```{r}
+pca <- prcomp(new_data, scale = TRUE)
+summary_pca <- summary(pca)
+
+# Display variance explained
+summary_pca
+
+# Mean variance explained across all PCs
+mean(summary_pca$importance[2, ])
+
+# Scree plot of variance explained
+fviz_eig(pca, addlabels = TRUE, barfill = "steelblue", barcolor = "black",
+          main = "Scree Plot: Variance Explained by Principal Components")
+
+```
+
+#### Correlation structure among variables
+This geographic visualization provides spatial context for the data points, helping us understand whether geographic clustering might influence the underlying correlation structure among housing variables.
+```{r}
+# Optional: geographic context visualization
+plot(BostonHousing2$lon, BostonHousing2$lat,
+     main = "Geographic Distribution of Data Points",
+     xlab = "Longitude", ylab = "Latitude", col = "steelblue", pch = 19)
+```
+
+
+### Variable contributions to principal components
+We visualize which original variables contribute most strongly to the first three principal components (PC1, PC2, PC3), revealing which housing characteristics drive the primary axes of variation in the dataset.
+```{r}
+# Contributions for the first 3 principal components
+fviz_contrib(pca, choice = "var", axes = 1)
+barplot(pca$rotation[,1], las = 2, main = "Variable Contributions to PC1")
+
+fviz_contrib(pca, choice = "var", axes = 2)
+barplot(pca$rotation[,2], las = 2, main = "Variable Contributions to PC2")
+
+fviz_contrib(pca, choice = "var", axes = 3)
+barplot(pca$rotation[,3], las = 2, main = "Variable Contributions to PC3")
+```
+
+
+#### Identify top contributing variables per component
+For each of the first three principal components, we identify and display the five variables with the largest absolute loadings, highlighting which features most strongly define each component's interpretation.
+```{r}
+top_PC1 <- sort(abs(pca$rotation[,1]), decreasing = TRUE)[1:5]
+top_PC2 <- sort(abs(pca$rotation[,2]), decreasing = TRUE)[1:5]
+top_PC3 <- sort(abs(pca$rotation[,3]), decreasing = TRUE)[1:5]
+
+cat("Top 5 variables for PC1:\n")
+print(names(top_PC1))
+cat("\nTop 5 variables for PC2:\n")
+print(names(top_PC2))
+cat("\nTop 5 variables for PC3:\n")
+print(names(top_PC3))
+```
+
+#### Visualize top absolute loadings
+Bar plots of absolute loadings show the relative importance of each variable within PC1, PC2, and PC3, making it easier to interpret what each principal component represents in terms of the original housing characteristics.
+```{r}
+barplot(sort(abs(pca$rotation[,1]), decreasing = TRUE),
+        main = "Absolute Loadings - PC1", las = 2, col = "steelblue")
+barplot(sort(abs(pca$rotation[,2]), decreasing = TRUE),
+        main = "Absolute Loadings - PC2", las = 2, col = "darkgreen")
+barplot(sort(abs(pca$rotation[,3]), decreasing = TRUE),
+        main = "Absolute Loadings - PC3", las = 2, col = "purple")
+```
+
+## Factor Analysis
+Here, we are doing factor analysis with a couple  different models:
+
+#### 3-factor model (no rotation)
+```{r}
+x.f <- factanal(new_data, factors = 3, rotation = "none", scores = "regression")
+x.f
+
+# Compare PCA vs FA loadings visually (Factor 1)
+fa_loadings <- as.data.frame(x.f$loadings[, 1:3])
+pca_loadings <- as.data.frame(pca$rotation[, 1:3])
+
+plot(pca_loadings[,1], fa_loadings[,1],
+     xlab = "PCA Loadings (PC1)", ylab = "Factor Loadings (F1)",
+     main = "PCA vs. Factor Analysis Loadings (Factor 1)",
+     pch = 19, col = "steelblue")
+abline(a = 0, b = 1, col = "red", lty = 2)
+text(pca_loadings[,1], fa_loadings[,1],
+     labels = rownames(pca_loadings), pos = 3, cex = 0.7)
+
+```
+
+#### 2-factor model (no rotation)
+```{r}
+x.f2 <- factanal(new_data, factors = 2, rotation = "none", scores = "regression")
+x.f2
+
+# Compare PCA vs FA loadings visually (Factor 2)
+plot(pca_loadings[,2], x.f2$loadings[,2],
+     xlab = "PCA Loadings (PC2)", ylab = "Factor Loadings (F2)",
+     main = "PCA vs. Factor Analysis Loadings (Factor 2)",
+     pch = 19, col = "darkgreen")
+abline(a = 0, b = 1, col = "red", lty = 2)
+text(pca_loadings[,2], x.f2$loadings[,2],
+     labels = rownames(pca_loadings), pos = 3, cex = 0.7)
+
+```
+
+
+#### 3-factor model with varimax rotation
+```{r}
+x.f_varimax <- factanal(new_data, factors = 3, rotation = "varimax", scores = "regression")
+x.f_varimax
+
+# Visualize rotated factor loadings
+barplot(x.f_varimax$loadings[,1],
+        main = "Varimax Rotated Factor 1 Loadings",
+        col = "steelblue", las = 2)
+barplot(x.f_varimax$loadings[,2],
+        main = "Varimax Rotated Factor 2 Loadings",
+        col = "darkgreen", las = 2)
+barplot(x.f_varimax$loadings[,3],
+        main = "Varimax Rotated Factor 3 Loadings",
+        col = "purple", las = 2)
+```
+
+The factor analysis explains a similar proportion of variance as the principal component analysis (PCA). For example, the first three principal components account for about 72% of the variance, while the three extracted factors explain roughly 66%.
+
+When comparing the factor loadings to the PCA loadings, the overall patterns are very consistent. The interpretation of Factor 1 is identical to PC1, showing the same variable relationships. For Factor 2, some loadings have opposite signs, but since the direction (positive vs. negative) in PCA and FA is arbitrary, the underlying relationships remain the same — meaning the interpretation aligns closely with PCA Dimension 2.
+
+
+## Clustering tools
+Below we apply two different types of clustering methods: k-means and k-medoids.
+
+#### Apply k-means for different values of k
+```{r}
+# K-means
+library(MASS)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(factoextra)
+library(cluster)
+
+set.seed(123)
+
+# Data prep
+x <- BostonHousing2[, !(names(BostonHousing2) %in%
+  c("townno", "tract", "medv", "chas", "rad", "outlier", "town", "cmedv"))]
+
+x_scaled <- scale(x)
+k <- 5
+
+# K-means clustering
+fit.kmeans <- kmeans(x_scaled, centers = k, nstart = 1000)
+groups <- fit.kmeans$cluster
+
+# Barplot of cluster sizes
+barplot(table(groups), col = "steelblue",
+        main = "Cluster Sizes (K-means)",
+        xlab = "Cluster", ylab = "Count")
+
+# Cluster centers
+centers <- fit.kmeans$centers
+tidy <- as.data.frame(t(centers)) %>%
+  gather(cluster, coor) %>%
+  mutate(var = rep(colnames(centers), times = k),
+         size = rep(table(groups), each = ncol(centers)))
+
+# Visualizations
+# Variable-centered view
+tidy %>%
+  ggplot(aes(x = cluster, y = coor, fill = cluster)) +
+  geom_col() +
+  facet_wrap(~var, scales = "free_y") +
+  geom_text(aes(label = size),
+            position = position_stack(1.2)) +
+  theme_minimal() +
+  labs(title = "Cluster Centers by Variable (K-means)")
+
+# Cluster-centered view
+tidy %>%
+  ggplot(aes(x = var, y = coor, fill = var)) +
+  geom_col() +
+  facet_wrap(~cluster, scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Variable Profiles per Cluster (K-means)") +
+  theme_minimal()
+
+# 2D Cluster Visualization
+fviz_cluster(fit.kmeans, data = x_scaled, geom = "point",
+             ellipse.type = "norm", main = "K-means Clusters") +
+  theme_minimal()
+
+```
+
+
+#### K-medoids (PAM)
+```{r}
+# K-medoids PAM clustering
+library(factoextra)
+library(cluster)
+set.seed(123)
+
+# PAM clustering
+k <- 5
+fit.pam <- eclust(x_scaled, FUNcluster = "pam", stand = TRUE,
+                  k = k, graph = FALSE, nstart = 1000)
+
+# Barplot of cluster sizes
+barplot(table(fit.pam$cluster), col = "darkred",
+        main = "Cluster Sizes (K-medoids / PAM)",
+        xlab = "Cluster", ylab = "Count")
+
+# Visualizing clusters
+fviz_cluster(fit.pam, geom = "point", ellipse.type = "norm",
+             main = "Clusters with PAM (K-medoids)",
+             star.plot = TRUE, repel = TRUE) +
+  theme_minimal()
+```
+
+
+Comparison of K-means and K-mediums:
+The K-means results show five main clusters that are pretty well separated in the PCA plot (about 45% of the variance on Dim1 and 10% on Dim2). Most clusters look compact and round, with red and green standing out the most. The yellow and purple ones overlap a bit in the lower-left area, probably meaning those neighborhoods share similar traits like mid-level crime or room counts but differ in things like taxes or income levels.
+
+The PAM clustering looks very similar overall but forms tighter, cleaner groups. Each cluster is centered on an actual data point (the medoid), and the “stars” show which points belong to it. The borders are sharper, and a few overlapping points—especially between yellow and purple—get reassigned for a better fit.
+
+In short, both methods found the same general neighborhood patterns. K-means gives slightly finer detail but is touchier about outliers, while PAM creates clearer, more stable clusters.
+
